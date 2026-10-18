@@ -428,7 +428,34 @@ static ABI int32_t ime_result(uint32_t *result) {
 }
 static ABI int32_t ime_term(void) { memset(&ime,0,sizeof(ime)); return 0; }
 
-/* ---- Trophies: accepted locally, recorded in the log ---- */
+/* ---- Local trophies: persistence prototype; no PSN synchronization. ---- */
+static pthread_mutex_t trophy_mutex = PTHREAD_MUTEX_INITIALIZER;
+static unsigned char trophy_bits[16];
+static int trophy_loaded;
+static void trophy_load(void) {
+    if (trophy_loaded) return;
+    FILE *f=fopen("gow3_trophies.dat","rb");
+    if (f) {
+        unsigned char magic[4], bits[16];
+        if (fread(magic,1,4,f)==4 && memcmp(magic,"GWT1",4)==0 &&
+            fread(bits,1,16,f)==16) memcpy(trophy_bits,bits,16);
+        fclose(f);
+    }
+    trophy_loaded=1;
+}
+static int trophy_save(void) {
+    FILE *f=fopen("gow3_trophies.dat.tmp","wb");
+    if (!f) return -1;
+    int ok=fwrite("GWT1",1,4,f)==4 &&
+           fwrite(trophy_bits,1,16,f)==16 && fflush(f)==0;
+    if (fclose(f)!=0) ok=0;
+    if (!ok) { remove("gow3_trophies.dat.tmp"); return -1; }
+#ifdef _WIN32
+    remove("gow3_trophies.dat");
+#endif
+    if (rename("gow3_trophies.dat.tmp","gow3_trophies.dat")!=0) return -1;
+    return 0;
+}
 static ABI int32_t trophy_context(int32_t *ctx,int32_t user,uint32_t label,uint64_t options) {
     (void)user; (void)label; (void)options;
     if (!ctx) return TROPHY_INVALID;
@@ -438,7 +465,20 @@ static ABI int32_t trophy_handle(int32_t *handle) { if (!handle) return TROPHY_I
 static ABI int32_t trophy_register(int32_t ctx,int32_t handle,uint64_t options) { (void)ctx; (void)handle; (void)options; return 0; }
 static ABI int32_t trophy_unlock(int32_t ctx,int32_t handle,int32_t id,int32_t *platinum) {
     (void)ctx; (void)handle;
-    printf("Runtime: trophy %d unlocked\n",id);
+    if (id<0 || id>=128) return TROPHY_INVALID;
+    pthread_mutex_lock(&trophy_mutex);
+    trophy_load();
+    unsigned char mask=(unsigned char)(1u<<(id%8));
+    if (!(trophy_bits[id/8]&mask)) {
+        trophy_bits[id/8]|=mask;
+        if (trophy_save()!=0) {
+            trophy_bits[id/8]&=(unsigned char)~mask;
+            pthread_mutex_unlock(&trophy_mutex);
+            return TROPHY_INVALID;
+        }
+        printf("Runtime: NEW local trophy %d unlocked\n",id);
+    }
+    pthread_mutex_unlock(&trophy_mutex);
     if (platinum) *platinum=-1;
     return 0;
 }
@@ -451,11 +491,14 @@ static ABI int32_t trophy_game_info(int32_t ctx,int32_t handle,void *details,voi
 static ABI int32_t trophy_info(int32_t ctx,int32_t handle,int32_t id,void *details,void *data) {
     (void)id; return trophy_game_info(ctx,handle,details,data);
 }
-/* Nothing is unlocked on this console: an empty 128-trophy flag set. */
+/* Provisional capacity: 128 IDs; actual trophy count still needs metadata. */
 static ABI int32_t trophy_unlock_state(int32_t ctx,int32_t handle,uint32_t *flags,uint32_t *count) {
     if (!flags || !count) return TROPHY_INVALID;
     if (ctx<=0 || handle<=0) return TROPHY_INVALID;
-    memset(flags,0,16); *count=0;
+    pthread_mutex_lock(&trophy_mutex);
+    trophy_load();
+    memcpy(flags,trophy_bits,16); *count=128;
+    pthread_mutex_unlock(&trophy_mutex);
     return 0;
 }
 static ABI int32_t trophy_release(int32_t id) { return id>0 ? 0 : TROPHY_INVALID; }
