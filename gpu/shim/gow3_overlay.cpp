@@ -138,6 +138,11 @@ void PollTrophyEvents() {
         try {
             size_t consumed = 0;
             const int id = std::stoi(line, &consumed);
+            // PowerShell Add-Content writes CRLF on Windows. std::getline strips
+            // LF but leaves CR, so the strict parse used to reject valid IDs.
+            while (consumed < line.size() &&
+                   (line[consumed] == '\r' || line[consumed] == ' ' ||
+                    line[consumed] == '\t')) ++consumed;
             if (consumed == line.size() && id >= 0 && id < 128) {
                 trophy_text = "Conquista desbloqueada! (ID " + std::to_string(id) + ")";
                 trophy_until = now + 5500;
