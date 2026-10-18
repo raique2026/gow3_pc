@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <mutex>
 #include <vector>
 
@@ -88,6 +91,83 @@ std::vector<Gow3Png::Image> choice_pictures;
 std::vector<ImTextureData*> choice_textures, choice_retired;
 std::atomic<bool> choice_retiring{false};
 float base_scale = 1.0f;
+
+ // Local trophy events are consumed by the Vulkan/ImGui overlay, not a Windows popup.
+ // Read on the presentation thread at most 5 times/second; never block the game thread.
+std::string trophy_text;
+s64 trophy_until = 0;
+std::filesystem::path trophy_log_path;
+std::uintmax_t trophy_offset = 0;
+s64 trophy_next_check = 0;
+bool trophy_log_initialized = false;
+
+void PollTrophyEvents() {
+    const s64 now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now < trophy_next_check) return;
+    trophy_next_check = now + 200;
+    if (!trophy_log_initialized) {
+        const char* user = std::getenv("GOW3_USER_DIR");
+        trophy_log_path = (user && *user ? std::filesystem::path(user)
+                                        : std::filesystem::path("user")) / "trophy_events.log";
+        trophy_log_initialized = true;
+        std::error_code ec;
+        if (std::filesystem::exists(trophy_log_path, ec)) {
+            trophy_offset = std::filesystem::file_size(trophy_log_path, ec);
+            if (ec) trophy_offset = 0;
+        }
+        return;
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(trophy_log_path, ec)) return;
+    const auto size = std::filesystem::file_size(trophy_log_path, ec);
+    if (ec) return;
+    if (size < trophy_offset) trophy_offset = 0;
+    if (size == trophy_offset) return;
+    std::ifstream input(trophy_log_path);
+    if (!input) return;
+    input.seekg(static_cast<std::streamoff>(trophy_offset));
+    std::string line;
+    while (std::getline(input, line)) {
+        try {
+            size_t consumed = 0;
+            const int id = std::stoi(line, &consumed);
+            if (consumed == line.size() && id >= 0 && id < 128) {
+                trophy_text = "Conquista desbloqueada! (ID " + std::to_string(id) + ")";
+                trophy_until = now + 5500;
+            }
+        } catch (const std::exception&) {
+            // Ignore partial or malformed lines.
+        }
+    }
+    // Read complete file length only after the stream is processed.
+    trophy_offset = size;
+}
+
+bool TrophyActive() {
+    return !trophy_text.empty() && trophy_until > std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void TrophyToast() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x * 0.5f,
+                                   viewport->WorkPos.y + 20.0f * base_scale),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.94f);
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.73f, 0.56f, 0.29f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::Begin("##gow3_trophy_toast", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize |
+                 ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
+                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::TextColored(ImVec4(0.88f, 0.72f, 0.42f, 1.0f), "GOD OF WAR III REMASTERED");
+    ImGui::TextUnformatted(trophy_text.c_str());
+    ImGui::End();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+}
+
 
 // Present rate for the FPS counter.
 std::chrono::steady_clock::time_point last_present{};
@@ -1202,9 +1282,10 @@ void SetLoading(bool active, u32 done, u32 total) {
 }
 
 bool Visible() {
+    PollTrophyEvents();
     const auto& s = Gow3Settings::Get();
     return initialized && (loading || background_total || menu_open || text_entry_active || choice_active ||
-                           choice_retiring || s.show_fps || NoticeActive() ||
+                           choice_retiring || s.show_fps || NoticeActive() || TrophyActive() ||
                            (s.actor_watch_supported && s.enemy_health_bar));
 }
 
@@ -1275,6 +1356,9 @@ void Render(vk::CommandBuffer cmdbuf, vk::ImageView view, vk::Extent2D extent) {
     }
     if (NoticeActive()) {
         Notice();
+    }
+    if (TrophyActive()) {
+        TrophyToast();
     }
     if (!loading && !menu_open) {
         HealthDisplay();
