@@ -1854,7 +1854,7 @@ class Launcher:
     def build_trophies(self):
         """Experimental local trophy list; IDs are not yet mapped to official metadata."""
         tk, ttk = self.tk, self.ttk
-        f = self.page('trophies', 'Troféus', 'Conquistas locais do God of War III (sem PSN)')
+        f = self.scrolled_page('trophies', 'Troféus', 'Conquistas locais do God of War III (sem PSN)')
         self.trophy_summary = ttk.Label(f, text='Carregando conquistas locais...')
         self.trophy_summary.pack(anchor='w', pady=self.px((12, 10)))
         self.trophy_list = tk.Text(f, height=20, wrap='word', state='disabled',
