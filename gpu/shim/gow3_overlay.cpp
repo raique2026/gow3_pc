@@ -111,6 +111,12 @@ void PollTrophyEvents() {
         trophy_log_path = (user && *user ? std::filesystem::path(user)
                                         : std::filesystem::path("user")) / "trophy_events.log";
         trophy_log_initialized = true;
+        // Diagnostic: set GOW3_TROPHY_TEST=1 to display a toast on startup.
+        const char* test = std::getenv("GOW3_TROPHY_TEST");
+        if (test && std::strcmp(test, "1") == 0) {
+            trophy_text = "Teste de trofeu - overlay Vulkan ativo";
+            trophy_until = now + 30000;
+        }
         std::error_code ec;
         if (std::filesystem::exists(trophy_log_path, ec)) {
             trophy_offset = std::filesystem::file_size(trophy_log_path, ec);
