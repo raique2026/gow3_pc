@@ -476,7 +476,21 @@ static ABI int32_t trophy_unlock(int32_t ctx,int32_t handle,int32_t id,int32_t *
             pthread_mutex_unlock(&trophy_mutex);
             return TROPHY_INVALID;
         }
-        printf("Runtime: NEW local trophy %d unlocked\n",id);
+        printf("Runtime: NEW local trophy %d unlocked\\n",id);
+        /* Append-only event stream for an optional external toast viewer.
+         * Emitted only on first unlock; no UI work on the game thread. */
+        const char *user_dir=runtime_file_user_dir();
+        if (user_dir && *user_dir) {
+            char path[4096];
+            int len=snprintf(path,sizeof(path),"%s/trophy_events.log",user_dir);
+            if (len>0 && (size_t)len<sizeof(path)) {
+                FILE *events=fopen(path,"a");
+                if (events) {
+                    fprintf(events,"%d\\n",id);
+                    fclose(events);
+                }
+            }
+        }
     }
     pthread_mutex_unlock(&trophy_mutex);
     if (platinum) *platinum=-1;
