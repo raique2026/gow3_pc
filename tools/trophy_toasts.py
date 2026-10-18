@@ -12,6 +12,7 @@ import tkinter as tk
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("user_dir", type=Path)
+    parser.add_argument("--test", action="store_true", help="Show a test popup immediately")
     args = parser.parse_args()
     path = args.user_dir / "trophy_events.log"
     offset = path.stat().st_size if path.exists() else 0
@@ -85,7 +86,11 @@ def main():
         root.after(500, poll)
 
     print(f"Watching {path} for trophy events (Ctrl+C to stop)")
-    root.after(500, poll)
+    if args.test:
+        root.after(250, lambda: show(7))
+        root.after(7000, root.destroy)
+    else:
+        root.after(500, poll)
     root.mainloop()
 
 if __name__ == "__main__":
