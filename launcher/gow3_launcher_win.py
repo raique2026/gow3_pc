@@ -1870,6 +1870,9 @@ class Launcher:
         tk = self.tk
         path = self.user_dir() / 'gow3_trophies.dat'
         icon_dir = self.user_dir() / 'trophy_icons'
+        fallback_icon_dir = DATA_DIR / 'user' / 'trophy_icons'
+        if not icon_dir.is_dir() and fallback_icon_dir.is_dir():
+            icon_dir = fallback_icon_dir
         unlocked = set()
         error = None
         try:
@@ -1895,6 +1898,12 @@ class Launcher:
             from PIL import Image, ImageTk
         except ImportError:
             Image = ImageTk = None
+        if Image is None:
+            self.trophy_summary.configure(text=f'{count} / 35 — instale Pillow para ver as imagens: python -m pip install pillow')
+        elif not icon_dir.is_dir():
+            self.trophy_summary.configure(text=f'{count} / 35 — pasta de ícones não encontrada: {icon_dir}')
+        elif not (icon_dir / 'TROP000.PNG').is_file():
+            self.trophy_summary.configure(text=f'{count} / 35 — não encontrei TROP000.PNG em {icon_dir}')
         for trophy_id in range(35):
             acquired = trophy_id in unlocked
             row = tk.Frame(self.trophy_rows, bg=CARD, padx=self.px(12), pady=self.px(9))
