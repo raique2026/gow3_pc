@@ -2947,19 +2947,8 @@ class Launcher:
             self.process = None
             return
         self.job = GameJob(self.process)
-        # Start the optional local trophy overlay alongside the game (source checkout).
-        # The overlay only reads events; it never unlocks trophies itself.
-        self.trophy_viewer = None
-        viewer = PORT_DIR / 'tools' / 'trophy_toasts.py'
-        if viewer.is_file() and not FROZEN:
-            try:
-                self.trophy_viewer = subprocess.Popen(
-                    [sys.executable, str(viewer), str(self.user_dir())],
-                    cwd=PORT_DIR, stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    creationflags=NO_WINDOW, **NEW_GROUP)
-            except OSError as exc:
-                self.append(f'Trophy viewer could not start: {exc}\\n')
+        # Trophy notifications are drawn inside the game's Vulkan/ImGui overlay.
+        # Do not spawn the old external Tk toast window.
         threading.Thread(target=self.read_output, args=(self.process, run_log), daemon=True).start()
         self.play_button.configure(text=_('RUNNING'), state='disabled')
         self.status.configure(text=_('Preparing the game; it opens in its own window…',
