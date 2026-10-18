@@ -1852,45 +1852,80 @@ class Launcher:
         return Path(self.var('user_dir', 'app').get() or DATA_DIR / 'user')
 
     def build_trophies(self):
-        """Experimental local trophy list; IDs are not yet mapped to official metadata."""
+        """Show all trophy slots, including locked ones, using locally imported icons."""
         tk, ttk = self.tk, self.ttk
         f = self.scrolled_page('trophies', 'Troféus', 'Conquistas locais do God of War III (sem PSN)')
         self.trophy_summary = ttk.Label(f, text='Carregando conquistas locais...')
         self.trophy_summary.pack(anchor='w', pady=self.px((12, 10)))
-        self.trophy_list = tk.Text(f, height=20, wrap='word', state='disabled',
-                                  bg=BG, fg=TEXT, insertbackground=TEXT,
-                                  relief='flat', font=self.font(UI_FONT, 11))
-        self.trophy_list.pack(fill='both', expand=True)
+        self.trophy_progress = ttk.Progressbar(f, maximum=35, value=0)
+        self.trophy_progress.pack(fill='x', pady=self.px((0, 12)))
+        self.trophy_rows = tk.Frame(f, bg=BG)
+        self.trophy_rows.pack(fill='x')
         ttk.Button(f, text='Atualizar conquistas', command=self.refresh_trophies).pack(
-            anchor='w', pady=self.px((10, 0)))
+            anchor='w', pady=self.px((12, 0)))
+        self.trophy_photos = []
 
     def refresh_trophies(self):
-        """Read the 16-byte GWT1 flag file; never claim unknown IDs are official names."""
+        """Read GWT1 local flags and display 35 numbered slots without guessing metadata."""
+        tk = self.tk
         path = self.user_dir() / 'gow3_trophies.dat'
-        unlocked = []
+        icon_dir = self.user_dir() / 'trophy_icons'
+        unlocked = set()
         error = None
         try:
             data = path.read_bytes() if path.exists() else b''
             if data and (len(data) != 20 or data[:4] != b'GWT1'):
-                error = 'Arquivo de troféus inválido ou incompatível.'
+                error = 'Arquivo de progresso incompatível ou inválido.'
             elif data:
                 bits = data[4:]
-                unlocked = [i for i in range(128) if bits[i // 8] & (1 << (i % 8))]
+                unlocked = {i for i in range(128) if bits[i // 8] & (1 << (i % 8))}
         except OSError as exc:
             error = f'Não foi possível ler os troféus: {exc}'
+        for child in self.trophy_rows.winfo_children():
+            child.destroy()
+        self.trophy_photos = []
         if error:
             self.trophy_summary.configure(text=error)
-            body = 'Confira a pasta de saves configurada no launcher.'
-        else:
-            self.trophy_summary.configure(text=f'{len(unlocked)} troféu(s) local(is) registrado(s)')
-            body = ('IDs desbloqueados: ' + ', '.join(map(str, unlocked)) if unlocked
-                    else 'Nenhuma conquista local registrada ainda.')
-            body += ('\n\nA lista oficial de troféus bloqueados, nomes, ícones e '
-                     'categorias ainda depende dos metadados originais do jogo.')
-        self.trophy_list.configure(state='normal')
-        self.trophy_list.delete('1.0', 'end')
-        self.trophy_list.insert('1.0', body)
-        self.trophy_list.configure(state='disabled')
+            self.trophy_progress.configure(value=0)
+            return
+        count = sum(i in unlocked for i in range(35))
+        self.trophy_summary.configure(text=f'{count} / 35 conquistas locais desbloqueadas')
+        self.trophy_progress.configure(value=count)
+        try:
+            from PIL import Image, ImageTk
+        except ImportError:
+            Image = ImageTk = None
+        for trophy_id in range(35):
+            acquired = trophy_id in unlocked
+            row = tk.Frame(self.trophy_rows, bg=CARD, padx=self.px(12), pady=self.px(9))
+            row.pack(fill='x', pady=self.px((0, 5)))
+            icon_path = icon_dir / f'TROP{trophy_id:03d}.PNG'
+            if Image is not None and icon_path.is_file():
+                try:
+                    with Image.open(icon_path) as source:
+                        picture = source.convert('RGBA')
+                        picture.thumbnail((self.px(48), self.px(48)))
+                        if not acquired:
+                            picture = picture.convert('LA').convert('RGBA')
+                        photo = ImageTk.PhotoImage(picture)
+                    self.trophy_photos.append(photo)
+                    tk.Label(row, image=photo, bg=CARD).pack(side='left', padx=self.px((0, 12)))
+                except (OSError, ValueError):
+                    pass
+            title = f'Troféu #{trophy_id:02d}'
+            state = 'DESBLOQUEADO' if acquired else 'BLOQUEADO'
+            info = tk.Frame(row, bg=CARD)
+            info.pack(side='left', fill='x', expand=True)
+            tk.Label(info, text=title, bg=CARD, fg=TEXT,
+                     font=self.font(UI_FONT, 11, 'bold'), anchor='w').pack(fill='x')
+            tk.Label(info, text=state, bg=CARD, fg=ACCENT_HI if acquired else MUTED,
+                     font=self.font(UI_FONT, 9), anchor='w').pack(fill='x')
+        tk.Label(self.trophy_rows,
+                 text='Nomes, descrições e categorias oficiais ainda não estão disponíveis: '
+                      'os metadados ESFM do arquivo TRP estão criptografados. '
+                      'Os IDs exibidos são slots locais, não uma associação oficial validada.',
+                 bg=BG, fg=MUTED, justify='left', wraplength=self.px(650),
+                 font=self.font(UI_FONT, 9)).pack(anchor='w', pady=self.px((8, 4)))
 
     def build_save_backups(self, f):
         """run.py backs the saves up before every start; one of them can be restored here."""
