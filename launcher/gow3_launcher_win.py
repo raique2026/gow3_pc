@@ -1885,7 +1885,7 @@ class Launcher:
             self.trophy_summary.configure(text=f'{len(unlocked)} troféu(s) local(is) registrado(s)')
             body = ('IDs desbloqueados: ' + ', '.join(map(str, unlocked)) if unlocked
                     else 'Nenhuma conquista local registrada ainda.')
-            body += ('\\n\\nA lista oficial de troféus bloqueados, nomes, ícones e '
+            body += ('\n\nA lista oficial de troféus bloqueados, nomes, ícones e '
                      'categorias ainda depende dos metadados originais do jogo.')
         self.trophy_list.configure(state='normal')
         self.trophy_list.delete('1.0', 'end')
