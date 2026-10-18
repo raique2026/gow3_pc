@@ -401,8 +401,8 @@ DISPLAY_MODES = [('windowed', ('Windowed',)), ('borderless', ('Borderless',)), (
 ANISOTROPY = [('0', ('Game default',)), ('2', ('2x',)), ('4', ('4x',)), ('8', ('8x',)), ('16', ('16x',))]
 FPS_LIMITS = [('30', ('30',)), ('60', ('60',)), ('100', ('100',)), ('120', ('120',)), ('240', ('240',)), ('0', ('Unlimited',))]
 # The sidebar's pages, top to bottom, and the methods that refresh a page's lists when it is shown.
-PAGES = ('home', 'graphics', 'performance', 'game', 'controls', 'mods', 'advanced')
-PAGE_REFRESH = {'home': ('refresh_status',), 'game': ('refresh_game_patches',), 'mods': ('refresh_lists',)}
+PAGES = ('home', 'graphics', 'performance', 'game', 'trophies', 'controls', 'mods', 'advanced')
+PAGE_REFRESH = {'home': ('refresh_status',), 'game': ('refresh_game_patches',), 'trophies': ('refresh_trophies',), 'mods': ('refresh_lists',)}
 UI_SCALES = [('auto', ('Auto',)), ('1', ('1x',)), ('2', ('2x',))]
 APP_DEFAULTS = {'ui_language': 'en', 'ui_scale': 'auto', 'game_dir': os.environ.get('GOW3_GAME_DIR', str(PORT_DIR.parent / 'CUSA01623') if WINDOWS else ''), 'update_dir': '', 'experimental_upscaler': False,
                 'video_backend': 'auto', 'gamemode': False, 'mangohud': False, 'desktop_integration': True, 'user_dir': '',
@@ -1571,7 +1571,7 @@ class Launcher:
         self.side = side
         self.nav, self.current_page = {}, None
         titles = {'home': _('Home'), 'graphics': _('Graphics', 'Графика'), 'performance': _('Performance'),
-                  'game': _('Game', 'Игра'), 'controls': _('Controls', 'Управление'), 'mods': _('Mods', 'Моды'), 'advanced': _('Advanced', 'Дополнительно')}
+                  'game': _('Game', 'Игра'), 'trophies': 'Troféus', 'controls': _('Controls', 'Управление'), 'mods': _('Mods', 'Моды'), 'advanced': _('Advanced', 'Дополнительно')}
         for name in PAGES:
             item = tk.Label(side, text='    ' + titles[name], bg=BG, fg=TEXT, anchor='w',
                             font=self.heading_font(11, UI_FONT),
@@ -1608,6 +1608,7 @@ class Launcher:
         self.build_graphics()
         self.build_performance()
         self.build_game()
+        self.build_trophies()
         self.build_controls()
         self.build_mods_page()
         self.build_advanced()
@@ -1849,6 +1850,47 @@ class Launcher:
 
     def user_dir(self):
         return Path(self.var('user_dir', 'app').get() or DATA_DIR / 'user')
+
+    def build_trophies(self):
+        """Experimental local trophy list; IDs are not yet mapped to official metadata."""
+        tk, ttk = self.tk, self.ttk
+        f = self.page('trophies', 'Troféus', 'Conquistas locais do God of War III (sem PSN)')
+        self.trophy_summary = ttk.Label(f, text='Carregando conquistas locais...')
+        self.trophy_summary.pack(anchor='w', pady=self.px((12, 10)))
+        self.trophy_list = tk.Text(f, height=20, wrap='word', state='disabled',
+                                  bg=BG, fg=TEXT, insertbackground=TEXT,
+                                  relief='flat', font=self.font(UI_FONT, 11))
+        self.trophy_list.pack(fill='both', expand=True)
+        ttk.Button(f, text='Atualizar conquistas', command=self.refresh_trophies).pack(
+            anchor='w', pady=self.px((10, 0)))
+
+    def refresh_trophies(self):
+        """Read the 16-byte GWT1 flag file; never claim unknown IDs are official names."""
+        path = self.user_dir() / 'gow3_trophies.dat'
+        unlocked = []
+        error = None
+        try:
+            data = path.read_bytes() if path.exists() else b''
+            if data and (len(data) != 20 or data[:4] != b'GWT1'):
+                error = 'Arquivo de troféus inválido ou incompatível.'
+            elif data:
+                bits = data[4:]
+                unlocked = [i for i in range(128) if bits[i // 8] & (1 << (i % 8))]
+        except OSError as exc:
+            error = f'Não foi possível ler os troféus: {exc}'
+        if error:
+            self.trophy_summary.configure(text=error)
+            body = 'Confira a pasta de saves configurada no launcher.'
+        else:
+            self.trophy_summary.configure(text=f'{len(unlocked)} troféu(s) local(is) registrado(s)')
+            body = ('IDs desbloqueados: ' + ', '.join(map(str, unlocked)) if unlocked
+                    else 'Nenhuma conquista local registrada ainda.')
+            body += ('\\n\\nA lista oficial de troféus bloqueados, nomes, ícones e '
+                     'categorias ainda depende dos metadados originais do jogo.')
+        self.trophy_list.configure(state='normal')
+        self.trophy_list.delete('1.0', 'end')
+        self.trophy_list.insert('1.0', body)
+        self.trophy_list.configure(state='disabled')
 
     def build_save_backups(self, f):
         """run.py backs the saves up before every start; one of them can be restored here."""
